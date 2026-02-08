@@ -1,0 +1,7 @@
+name: mc_trading_db
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pandas
+  - requests
