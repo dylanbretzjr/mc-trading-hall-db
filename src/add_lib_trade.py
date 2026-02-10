@@ -42,7 +42,6 @@ Output:
 
 TODO:
 - [ ] Add error handling for database connection issues
-- [ ] Implement logging instead of print statements for better traceability
 """
 
 import os
@@ -235,7 +234,13 @@ def add_librarian_trade(pre_loc=None, pre_v_id=None):
 
             # Get trade details
             ench, max_lvl = get_enchantment(cursor)
-            level = get_level(max_lvl)
+
+            if max_lvl == 1:
+                print(f'Setting enchantment level for "{ench}" to 1 (max level).')
+                level = 1
+            else:
+                level = get_level(max_lvl)
+
             cost = get_cost()
 
             # Check for duplicates
@@ -279,51 +284,68 @@ if __name__ == '__main__':
     last_v_id = None
 
     while True:
+        # 1. Run trade entry function
         loc, v_id, status = add_librarian_trade(last_loc, last_v_id)
 
-        # Handle 'full' villagers
-        if status == 'full':
-            print(f'Villager "{v_id}" has reached the maximum number of enchantment trades.'
-                '\nPlease choose a different villager for the next entry.')
-            last_loc = loc
-            last_v_id = None
-            continue
-
-        # Handle 'error' or 'cancelled' status
-        if status in ['error', 'cancelled'] and last_v_id is None:
-            pass
-        elif status == 'success':
+        # 2. Update memory based on status
+        if status in ['success', 'cancelled']:
             last_loc = loc
             last_v_id = v_id
+        elif status == 'full':
+            last_loc = loc
+            last_v_id = None
 
-        # Determine prompt based on context
+        # 3. Prompt for next action
+
+        # --- Same villager and location ---
         if last_v_id:
             prompt = f'\nAdd another trade for Villager "{last_v_id}" at "{last_loc}"? (y/n/exit): '
 
             while True:
-                cont = input(prompt).strip().lower()
-                if cont == 'y':
+                choice = input(prompt).strip().lower()
+                if choice == 'y':
                     break
-                elif cont == 'n':
-                    last_loc = None
+                elif choice == 'n':
                     last_v_id = None
                     break
-                elif cont == 'exit':
+                elif choice == 'exit':
                     print('\nExiting...')
                     exit()
-
                 else:
                     print('Invalid input. Please enter "y", "n", or "exit".')
+            if last_v_id:
+                continue
 
-        else:
+        # --- Same location, different villager ---
+        if last_loc:
+            prompt = f'\nAdd a trade for a different villager at "{last_loc}"? (y/n/exit): '
+
             while True:
-                cont = input('\nAdd another? (y/n): ').strip().lower()
-                if cont == 'y':
+                choice = input(prompt).strip().lower()
+                if choice == 'y':
+                    last_v_id = None
+                    break
+                elif choice == 'n':
                     last_loc = None
                     last_v_id = None
                     break
-                elif cont == 'n':
+                elif choice == 'exit':
                     print('\nExiting...')
                     exit()
                 else:
-                    print('Invalid input. Please enter "y" or "n".')
+                    print('Invalid input. Please enter "y", "n", or "exit".')
+            if last_loc:
+                continue
+
+        # --- Different location and villager ---
+        while True:
+            choice = input('\nAdd another trade at a different location? (y/n): ').strip().lower()
+            if choice == 'y':
+                last_loc = None
+                last_v_id = None
+                break
+            elif choice == 'n':
+                print('\nExiting...')
+                exit()
+            else:
+                print('Invalid input. Please enter "y" or "n".')
