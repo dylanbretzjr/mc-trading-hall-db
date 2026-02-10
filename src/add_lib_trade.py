@@ -201,7 +201,9 @@ def get_cost():
 
 # --- MAIN LOGIC ---
 
-def add_librarian_trade():
+def add_librarian_trade(pre_loc=None, pre_v_id=None):
+    """Add librarian trade with input validation and database checks."""
+
     print('\n--- 📚 New Librarian Trade Entry ---')
 
     try:
@@ -209,25 +211,34 @@ def add_librarian_trade():
             cursor = conn.cursor()
             cursor.execute('PRAGMA foreign_keys = ON;')
 
-            # 1. Get inputs
-            loc = get_location(cursor, conn)
-            v_id = get_villager_id(cursor, conn, loc)
+            # Get location (skip if provided)
+            if pre_loc:
+                print(f'Location: {pre_loc}')
+                loc = pre_loc
+            else:
+                loc = get_location(cursor, conn)
 
-            # --- NEW VALIDATION: CHECK TRADE LIMIT ---
+            # Get villager ID (skip if provided)
+            if pre_v_id:
+                print(f'Villager ID: {pre_v_id}')
+                v_id = pre_v_id
+            else:
+                v_id = get_villager_id(cursor, conn, loc)
+
+            # Check if villager already has 4 trades
             cursor.execute('SELECT COUNT(*) FROM librarian_trades WHERE villager_id = ?', (v_id,))
             trade_count = cursor.fetchone()[0]
 
             if trade_count >= 4:
-                print(f'❌ Error: Villager "{v_id}" already has {trade_count} trades (Maximum is 4).')
-                print('   Action cancelled. No new trade added.')
-                return 
-            # -----------------------------------------
+                print(f'❌ Error: Villager "{v_id}" already has {trade_count} out of 4 trades.')
+                return loc, v_id, 'full'
 
+            # Get trade details
             ench, max_lvl = get_enchantment(cursor)
             level = get_level(max_lvl)
             cost = get_cost()
 
-            # 2. Check for duplicates
+            # Check for duplicates
             cursor.execute("""
                 SELECT 1 FROM librarian_trades 
                 WHERE villager_id = ? AND enchantment = ? AND enchantment_level = ? AND cost_emeralds = ?
@@ -241,35 +252,78 @@ def add_librarian_trade():
                     confirm = input('Add duplicate trade anyway? (y/n): ').strip().lower()
                     if confirm == 'n':
                         print('❌ Action cancelled. Trade not added.')
-                        return
+                        return loc, v_id, 'cancelled'
                     elif confirm == 'y':
                         break
                     else:
                         print('Invalid input. Please enter "y" or "n".')
 
-            # 3. Save to database
+            # Save to database
             cursor.execute("""
                 INSERT INTO librarian_trades (villager_id, enchantment, enchantment_level, cost_emeralds)
                 VALUES (?, ?, ?, ?)
             """, (v_id, ench, level, cost))
             conn.commit()
+
             print(f'✅ Saved: Villager "{v_id}" sells "{ench} {level}" for {cost} emeralds.')
+            return loc, v_id, 'success'
 
     except Exception as e:
         print(f'\n❌ Error: {e}')
+        return None, None, 'error'
 
 # --- MAIN EXECUTION ---
 
 if __name__ == '__main__':
-    while True:
-        add_librarian_trade()
+    last_loc = None
+    last_v_id = None
 
-        while True:
-            cont = input('\nAdd another? (y/n): ').strip().lower()
-            if cont == 'y':
-                break
-            elif cont == 'n':
-                print('\nExiting...')
-                exit()
-            else:
-                print('Invalid input. Please enter "y" or "n".')
+    while True:
+        loc, v_id, status = add_librarian_trade(last_loc, last_v_id)
+
+        # Handle 'full' villagers
+        if status == 'full':
+            print(f'Villager "{v_id}" has reached the maximum number of enchantment trades.'
+                '\nPlease choose a different villager for the next entry.')
+            last_loc = loc
+            last_v_id = None
+            continue
+
+        # Handle 'error' or 'cancelled' status
+        if status in ['error', 'cancelled'] and last_v_id is None:
+            pass
+        elif status == 'success':
+            last_loc = loc
+            last_v_id = v_id
+
+        # Determine prompt based on context
+        if last_v_id:
+            prompt = f'\nAdd another trade for Villager "{last_v_id}" at "{last_loc}"? (y/n/exit): '
+
+            while True:
+                cont = input(prompt).strip().lower()
+                if cont == 'y':
+                    break
+                elif cont == 'n':
+                    last_loc = None
+                    last_v_id = None
+                    break
+                elif cont == 'exit':
+                    print('\nExiting...')
+                    exit()
+
+                else:
+                    print('Invalid input. Please enter "y", "n", or "exit".')
+
+        else:
+            while True:
+                cont = input('\nAdd another? (y/n): ').strip().lower()
+                if cont == 'y':
+                    last_loc = None
+                    last_v_id = None
+                    break
+                elif cont == 'n':
+                    print('\nExiting...')
+                    exit()
+                else:
+                    print('Invalid input. Please enter "y" or "n".')
