@@ -39,9 +39,6 @@ Output:
 - If the villager location is new, a new row is added to the `locations` table with the `location` and coordinate data (`x_coord`, `z_coord`)
 - If the `villager_id` is not in `villagers` table, then add a new row to the `villagers` table (`villager_id`, `location`, 'librarian') (notice that it should automatically record 'librarian' as the job)
 - Else add new row to `librarian_trades` table (`villager_id`, `enchantment`, `enchantment_level`, `cost_emeralds`)
-
-TODO:
-- [ ] Add error handling for database connection issues
 """
 
 import os
@@ -206,7 +203,13 @@ def add_librarian_trade(pre_loc=None, pre_v_id=None):
     print('\n--- 📚 New Librarian Trade Entry ---')
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+        except sqlite3.Error as e:
+            print(f'❌ Database connection error: {e}')
+            return None, None, 'error'
+
+        with conn:
             cursor = conn.cursor()
             cursor.execute('PRAGMA foreign_keys = ON;')
 
@@ -268,7 +271,6 @@ def add_librarian_trade(pre_loc=None, pre_v_id=None):
                 INSERT INTO librarian_trades (villager_id, enchantment, enchantment_level, cost_emeralds)
                 VALUES (?, ?, ?, ?)
             """, (v_id, ench, level, cost))
-            conn.commit()
 
             print(f'✅ Saved: Villager "{v_id}" sells "{ench} {level}" for {cost} emeralds.')
             return loc, v_id, 'success'
@@ -276,6 +278,10 @@ def add_librarian_trade(pre_loc=None, pre_v_id=None):
     except Exception as e:
         print(f'\n❌ Error: {e}')
         return None, None, 'error'
+
+    finally:
+        if conn:
+            conn.close()
 
 # --- MAIN EXECUTION ---
 
