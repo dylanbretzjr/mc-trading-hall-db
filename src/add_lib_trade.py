@@ -126,9 +126,6 @@ def get_villager_id(cursor, conn, current_loc):
             if registered_loc != current_loc:
                 print(f'⚠️ Warning: Villager {v_id} is currently registered at "{registered_loc}".')
 
-
-
-                # --- NEW LOGIC START ---
                 while True:
                     move = input(f'Move them to "{current_loc}"? (y/n): ').strip().lower()
                     if move == 'y':
@@ -138,15 +135,10 @@ def get_villager_id(cursor, conn, current_loc):
                         return v_id
                     elif move == 'n':
                         print('❌ Villager mismatch. Please enter a different Villager ID.')
-                        break # Breaks the INNER loop, executes code below
+                        break
                     else:
                         print('Invalid input. Please enter "y" or "n".')
-                
-                # If we are here, 'n' was chosen. Restart the OUTER loop.
                 continue 
-                # --- NEW LOGIC END ---
-
-
 
             return v_id
 
@@ -220,6 +212,17 @@ def add_librarian_trade():
             # 1. Get inputs
             loc = get_location(cursor, conn)
             v_id = get_villager_id(cursor, conn, loc)
+
+            # --- NEW VALIDATION: CHECK TRADE LIMIT ---
+            cursor.execute('SELECT COUNT(*) FROM librarian_trades WHERE villager_id = ?', (v_id,))
+            trade_count = cursor.fetchone()[0]
+
+            if trade_count >= 4:
+                print(f'❌ Error: Villager "{v_id}" already has {trade_count} trades (Maximum is 4).')
+                print('   Action cancelled. No new trade added.')
+                return 
+            # -----------------------------------------
+
             ench, max_lvl = get_enchantment(cursor)
             level = get_level(max_lvl)
             cost = get_cost()
@@ -255,7 +258,8 @@ def add_librarian_trade():
     except Exception as e:
         print(f'\n❌ Error: {e}')
 
-# Testing the function
+# --- MAIN EXECUTION ---
+
 if __name__ == '__main__':
     while True:
         add_librarian_trade()
