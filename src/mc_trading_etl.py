@@ -31,9 +31,6 @@ Output:
 Requirements:
 - requests
 - pandas
-
-TODO:
-- [ ] Add error handling for network issues and JSON parsing
 """
 
 import io
@@ -72,7 +69,7 @@ def get_latest_version_url():
     """Fetches version manifest to find the URL for latest release's JSON."""
     try:
         logging.info(f"Fetching manifest from {MANIFEST_URL}")
-        response = requests.get(MANIFEST_URL)
+        response = requests.get(MANIFEST_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
 
@@ -87,15 +84,24 @@ def get_latest_version_url():
 
         return None
 
+    except requests.exceptions.Timeout:
+        logging.error("Timeout error: Mojang's server took too long to respond.")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Network error fetching manifest: {e}")
+        return None
+    except json.JSONDecodeError:
+        logging.error("Error parsing manifest JSON. The response might be corrupted.")
+        return None
     except Exception as e:
-        logging.error(f"Error fetching manifest: {e}", exc_info=True)
+        logging.error(f"Unexpected error fetching manifest: {e}", exc_info=True)
         return None
 
 def get_client_jar_url(version_url):
     """Fetches version-specific JSON to find client.jar download URL."""
     try:
         logging.info("Fetching client JAR URL...")
-        response = requests.get(version_url)
+        response = requests.get(version_url, timeout=10)
         response.raise_for_status()
         data = response.json()
         return data["downloads"]["client"]["url"]
@@ -107,7 +113,7 @@ def extract_data_from_memory(jar_url):
     """Downloads JAR to RAM and extracts enchantment and job data."""
     logging.info(f"Downloading client.jar into memory (this may take a moment)...")
     try:
-        response = requests.get(jar_url)
+        response = requests.get(jar_url, timeout=10)
         response.raise_for_status()
         jar_bytes = io.BytesIO(response.content)
 
@@ -136,20 +142,39 @@ def extract_data_from_memory(jar_url):
                 # --- A. ENCHANTMENTS ---
                 if file_info.filename.startswith("data/minecraft/enchantment/") and file_info.filename.endswith(".json"):
                     with jar.open(file_info) as file:
-                        data = json.load(file)
+                        try:
+                            data = json.load(file)
 
-                        # Cleaning Logic
-                        clean_name = data.get('description', {}).get('translate').split('.')[-1]
-                        
-                        supported_items = data.get('supported_items')
-                        clean_items = str(supported_items).split('/')[-1] if supported_items else "unknown"
-                        
-                        if clean_name in tradeable_ids:
-                            enchant_list.append({
-                                "enchantment": clean_name,
-                                "max_level": data.get('max_level'),
-                                "supported_items": clean_items
-                            })
+                            description = data.get('description')
+
+                            if not description:
+                                raise ValueError("Missing 'description' field")
+
+                            if isinstance(description, dict):
+                                raw_name = description.get('translate')
+                                if not raw_name:
+                                    raise ValueError("Missing 'translate' key")
+                            else:
+                                raw_name = str(description)
+
+                            clean_name = raw_name.split('.')[-1]
+
+                            supported_items = data.get('supported_items')
+                            clean_items = str(supported_items).split('/')[-1] if supported_items else "unknown"
+
+                            if clean_name in tradeable_ids:
+                                enchant_list.append({
+                                    "enchantment": clean_name,
+                                    "max_level": data.get('max_level'),
+                                    "supported_items": clean_items
+                                })
+
+                        except json.JSONDecodeError:
+                            logging.warning(f"Skipping corrupted JSON file: {file_info.filename}")
+                            continue
+                        except (ValueError, AttributeError) as e:
+                            logging.warning(f"Skipping file {file_info.filename}: {e}")
+                            continue
 
                 # --- B. JOBS ---
                 elif file_info.filename == "data/minecraft/tags/point_of_interest_type/acquirable_job_site.json":
@@ -186,7 +211,6 @@ if __name__ == "__main__":
 
                         logging.info(f"Connecting to database at: {DB_PATH}")
 
-
                         cursor.execute("DROP TABLE IF EXISTS enchantments")
                         cursor.execute("DROP TABLE IF EXISTS jobs")
 
@@ -213,6 +237,8 @@ if __name__ == "__main__":
                 
                 except sqlite3.Error as e:
                     logging.error(f"Database error: {e}", exc_info=True)
+
             else:
                 logging.warning("No data extracted. Database not updated.")
+
     logging.info("--- ETL Pipeline Finished ---")
