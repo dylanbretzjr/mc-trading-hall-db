@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Minecraft Librarian Trading Data Entry Script
+"""Minecraft Librarian Trading Data Entry Script (DEPRECATED)
 Filename: add_lib_trade.py
 Author: Dylan Bretz Jr.
 Date: 2026-02-06
+
+Note: This script has become deprecated and superseded by `add_trade.py`.
 
 Description:
 This script allows users to register new librarian villagers and their enchantment trades into a SQLite database for a Minecraft trading system.
