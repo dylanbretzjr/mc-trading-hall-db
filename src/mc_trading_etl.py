@@ -275,7 +275,7 @@ def update_database(enchantments, jobs, latest_version):
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS enchantments (
                     enchantment TEXT PRIMARY KEY,
-                    max_level INTEGER NOT NULL CHECK (max_level BETWEEN 1 AND 5),
+                    max_level INTEGER NOT NULL CHECK(max_level BETWEEN 1 AND 5),
                     supported_items TEXT NOT NULL
                 );
             """)
