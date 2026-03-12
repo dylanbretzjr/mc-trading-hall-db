@@ -31,7 +31,7 @@ Flow:
 
 Input:
 - `location` (string): Name of the trading hall location (e.g. 'spawn')
-- `villager_id` (string): Unique identifier for the villager (e.g. 'spa001')
+- `villager_id` (string): Unique identifier for the villager (e.g. 'sp001')
 - `profession` (string): Villager profession (i.e., `librarian`, `armorer`, `toolsmith`, `weaponsmith`)
 - `item` (string): Item offered in the trade, validated against a fixed list for the profession (armorers, toolsmiths, and weaponsmiths only)
 - enchantment (string): Name of the enchantment (e.g. 'mending')
@@ -40,7 +40,7 @@ Input:
 
 Output:
 - If new location, add a new row to `locations` (`location`, `x_coord`, `z_coord`)
-- If new villager, add a new row to `villagers` (`villager_id`, `location`, `profession`)
+- If new villager, add a new row to `villagers` (`villager_id`, `location`, `profession`, `cured`)
 - Add a new row to the corresponding profession's table:
 	- `librarian_trades` (`villager_id`, `enchantment`, `enchantment_level`, `emerald_cost`)
 	- `armorer_trades`, `toolsmith_trades`, or `weaponsmith_trades` (`villager_id`, `item`, `emerald_cost`)
@@ -113,10 +113,21 @@ def get_profession():
             return prof
         print('❌ Error: Invalid profession. Try again.')
 
+def get_cured_status():
+    """Prompt user to indicate if a new villager has been cured."""
+    while True:
+        cured = input('\nHas this villager been zombified and cured? (y/n): ').strip().lower()
+        if cured == 'y':
+            return 1
+        elif cured == 'n':
+            return 0
+        else:
+            print('❌ Error: Invalid input. Please enter "y" or "n".')
+
 def get_villager_id(cursor, conn, current_loc):
     """Loop until a valid villager ID is confirmed."""
     while True:
-        v_id = input('\nVillager ID (e.g. "spa001"): ').strip().lower()
+        v_id = input('\nVillager ID (e.g. "sp001"): ').strip().lower()
         if not v_id:
             print('❌ Error: Villager ID cannot be empty. Try again.')
             continue
@@ -153,12 +164,14 @@ def get_villager_id(cursor, conn, current_loc):
             confirm = input(f'\nVillager ID "{v_id}" not found. Add new villager at "{current_loc}"? (y/n): ').strip().lower()
             if confirm == 'y':
                 job = get_profession()
+                cured = get_cured_status()
                 cursor.execute("""
-                    INSERT INTO villagers (villager_id, location, job)
-                    VALUES (?, ?, ?)
-                """, (v_id, current_loc, job))
+                    INSERT INTO villagers (villager_id, location, job, cured)
+                    VALUES (?, ?, ?, ?)
+                """, (v_id, current_loc, job, cured))
                 conn.commit()
-                print(f'✅ Added new {job.capitalize()} "{v_id}" at "{current_loc}".')
+                status_text = "cured" if cured else "uncured"
+                print(f'✅ Added new {status_text} {job.capitalize()} "{v_id}" at "{current_loc}".')
                 return v_id, job
             elif confirm == 'n':
                 print('❌ Action cancelled. Please enter a different Villager ID.')
