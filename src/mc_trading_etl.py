@@ -232,82 +232,86 @@ def extract_data_from_memory(jar_url):
         logging.error(f'Error extracting data from client.jar: {e}', exc_info=True)
         return [], []
 
+def update_database(enchantments, jobs, latest_version):
+    """Compares source data against the database and updates if necessary."""
+    try:
+        df_ench = pd.DataFrame(enchantments).sort_values('enchantment').reset_index(drop=True)
+        df_jobs = pd.DataFrame(jobs).sort_values('job').reset_index(drop=True)
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            logging.info(f'Connecting to database at: {DB_PATH}')
+
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='enchantments';
+            """)
+            ench_exists = cursor.fetchone()
+
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='jobs';
+            """)
+            jobs_exists = cursor.fetchone()
+
+            if ench_exists and jobs_exists:
+                logging.info('Comparing source data against existing database records...')
+
+                df_existing_ench = pd.read_sql_query('SELECT * FROM enchantments ORDER BY enchantment', conn)
+                df_existing_jobs = pd.read_sql_query('SELECT * FROM jobs ORDER BY job', conn)
+
+                if df_ench.equals(df_existing_ench) and df_jobs.equals(df_existing_jobs):
+                    logging.info(f'Database integrity verified. Data exactly matches Minecraft {latest_version}. No update required.')
+                    return
+
+            logging.info('Database changes or missing tables detected. Updating database...')
+
+            cursor.execute('DROP TABLE IF EXISTS enchantments')
+            cursor.execute('DROP TABLE IF EXISTS jobs')
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS enchantments (
+                    enchantment TEXT PRIMARY KEY,
+                    max_level INTEGER NOT NULL CHECK (max_level BETWEEN 1 AND 5),
+                    supported_items TEXT NOT NULL
+                );
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS jobs (
+                    job TEXT PRIMARY KEY
+                );
+            """)
+
+            df_ench.to_sql('enchantments', conn, if_exists='append', index=False)
+            df_jobs.to_sql('jobs', conn, if_exists='append', index=False)
+
+            logging.info(f'SUCCESS: Loaded {len(df_ench)} tradeable enchantments and {len(df_jobs)} possible jobs for Minecraft {latest_version}')
+    
+    except sqlite3.IntegrityError as e:
+        logging.error(f'Data integrity error: {e}', exc_info=True)
+    except sqlite3.Error as e:
+        logging.error(f'Database error: {e}', exc_info=True)
+
 # --- MAIN LOGIC ---
 
 def run_etl():
+    """Main ETL pipeline logic."""
     latest_version, version_url = get_latest_version_data()
+    if not latest_version or not version_url:
+        return
 
-    if latest_version and version_url:
+    client_url = get_client_jar_url(version_url)
+    if not client_url:
+        return
 
-        client_url = get_client_jar_url(version_url)
+    enchantments, jobs = extract_data_from_memory(client_url)
+    if not enchantments or not jobs:
+        logging.warning('No data extracted. Database not updated.')
+        return
 
-        if client_url:
-            enchantments, jobs = extract_data_from_memory(client_url)
-
-            if enchantments and jobs:
-                # DB: Consider refactoring into new helper function
-                try:
-                    df_ench = pd.DataFrame(enchantments).sort_values('enchantment').reset_index(drop=True)
-                    df_jobs = pd.DataFrame(jobs).sort_values('job').reset_index(drop=True)
-
-                    with sqlite3.connect(DB_PATH) as conn:
-                        cursor = conn.cursor()
-
-                        logging.info(f'Connecting to database at: {DB_PATH}')
-
-                        cursor.execute("""
-                            SELECT name FROM sqlite_master
-                            WHERE type='table' AND name='enchantments';
-                        """)
-                        ench_exists = cursor.fetchone()
-
-                        cursor.execute("""
-                            SELECT name FROM sqlite_master
-                            WHERE type='table' AND name='jobs';
-                        """)
-                        jobs_exists = cursor.fetchone()
-
-                        if ench_exists and jobs_exists:
-                            logging.info('Comparing source data against existing database records...')
-
-                            df_existing_ench = pd.read_sql_query('SELECT * FROM enchantments ORDER BY enchantment', conn)
-                            df_existing_jobs = pd.read_sql_query('SELECT * FROM jobs ORDER BY job', conn)
-
-                            if df_ench.equals(df_existing_ench) and df_jobs.equals(df_existing_jobs):
-                                logging.info(f'Database integrity verified. Data exactly matches Minecraft {latest_version}. No update required.')
-                                return
-
-                        logging.info('Database changes or missing tables detected. Updating database...')
-
-                        cursor.execute('DROP TABLE IF EXISTS enchantments')
-                        cursor.execute('DROP TABLE IF EXISTS jobs')
-
-                        cursor.execute("""
-                            CREATE TABLE IF NOT EXISTS enchantments (
-                                enchantment TEXT PRIMARY KEY,
-                                max_level INTEGER NOT NULL CHECK (max_level BETWEEN 1 AND 5),
-                                supported_items TEXT NOT NULL
-                            );
-                        """)
-
-                        cursor.execute("""
-                            CREATE TABLE IF NOT EXISTS jobs (
-                                job TEXT PRIMARY KEY
-                            );
-                        """)
-
-                        df_ench.to_sql('enchantments', conn, if_exists='append', index=False)
-                        df_jobs.to_sql('jobs', conn, if_exists='append', index=False)
-
-                        logging.info(f'SUCCESS: Loaded {len(df_ench)} tradeable enchantments and {len(df_jobs)} possible jobs for Minecraft {latest_version}')
-                
-                except sqlite3.IntegrityError as e:
-                    logging.error(f'Data integrity error: {e}', exc_info=True)
-                except sqlite3.Error as e:
-                    logging.error(f'Database error: {e}', exc_info=True)
-
-            else:
-                logging.warning('No data extracted. Database not updated.')
+    update_database(enchantments, jobs, latest_version)
 
 # --- MAIN EXECUTION ---
 
