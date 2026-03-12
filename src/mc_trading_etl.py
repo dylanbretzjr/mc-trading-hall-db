@@ -132,17 +132,19 @@ def get_client_jar_url(version_url):
         logging.error(f'Error extracting client URL from JSON: {e}', exc_info=True)
         return None
 
-def extract_data_from_memory(jar_url):
-    """Downloads JAR to RAM and extracts enchantment and job data."""
-    logging.info(f'Downloading client.jar into memory (this may take a moment)...')
+def download_jar_to_memory(jar_url):
+    """Downloads the client JAR into RAM and returns it as a BytesIO object."""
+    logging.info('Downloading client.jar into memory (this may take a moment)...')
     try:
         response = requests.get(jar_url, timeout=(10, 120))
         response.raise_for_status()
-        jar_bytes = io.BytesIO(response.content)
+        return io.BytesIO(response.content)
     except Exception as e:
         logging.error(f'Error downloading client.jar from Mojang: {e}')
-        return [], []
+        return None
 
+def parse_jar_data(jar_bytes):
+    """Unzips the JAR in memory and extracts enchantment and job data."""
     try:
         parsed_enchantments = []
         parsed_jobs = []
@@ -306,11 +308,18 @@ def run_etl():
     if not client_url:
         return
 
-    enchantments, jobs = extract_data_from_memory(client_url)
-    if not enchantments or not jobs:
-        logging.warning('No data extracted. Database not updated.')
+    # EXTRACT
+    jar_bytes = download_jar_to_memory(client_url)
+    if not jar_bytes:
         return
 
+    # TRANSFORM
+    enchantments, jobs = parse_jar_data(jar_bytes)
+    if not enchantments or not jobs:
+        logging.warning('No data parsed. Database not updated.')
+        return
+
+    # LOAD
     update_database(enchantments, jobs, latest_version)
 
 # --- MAIN EXECUTION ---
