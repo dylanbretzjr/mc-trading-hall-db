@@ -20,8 +20,8 @@ Flow:
 3. Check trade capacity.
 	- Librarian: check that this villager has fewer than 4 existing trades.
 	- Armorer / Toolsmith / Weaponsmith: prompt user for `item`, validate against the fixed list for the profession, and check that this villager does not already have a trade for this item.
-4. Prompt user for `cost_emeralds`.
-	- Validate that `cost_emeralds` is between 1 and 64.
+4. Prompt user for `emerald_cost`.
+	- Validate that `emerald_cost` is between 1 and 64.
 5. Insert row into the profession's trades table and retrieve the new `trade_id`.
 6. Prompt user for `enchantment` and `enchantment_level`.
 	- Librarian: collect one enchantment/level pair. Validate `enchantment` exists in `enchantments` table. Validate level is between 1 and `max_level`. Check for duplicate trade; if found, prompt user to confirm before adding.
@@ -36,14 +36,14 @@ Input:
 - `item` (string): Item offered in the trade, validated against a fixed list for the profession (armorers, toolsmiths, and weaponsmiths only)
 - enchantment (string): Name of the enchantment (e.g. 'mending')
 - enchantment_level (int): Level of the enchantment (e.g. 1)
-- cost_emeralds (int): Cost in emeralds for the trade (e.g. 15)
+- emerald_cost (int): Cost in emeralds for the trade (e.g. 15)
 
 Output:
 - If new location, add a new row to `locations` (`location`, `x_coord`, `z_coord`)
 - If new villager, add a new row to `villagers` (`villager_id`, `location`, `profession`)
 - Add a new row to the corresponding profession's table:
-	- `librarian_trades` (`villager_id`, `enchantment`, `enchantment_level`, `cost_emeralds`)
-	- `armorer_trades`, `toolsmith_trades`, or `weaponsmith_trades` (`villager_id`, `item`, `cost_emeralds`)
+	- `librarian_trades` (`villager_id`, `enchantment`, `enchantment_level`, `emerald_cost`)
+	- `armorer_trades`, `toolsmith_trades`, or `weaponsmith_trades` (`villager_id`, `item`, `emerald_cost`)
 - For armorer, toolsmith, and weaponsmith trades, add one or more rows to the corresponding enchantments table (`trade_id`, `enchantment`, `enchantment_level`)
 """
 
@@ -313,7 +313,7 @@ def add_trade(pre_loc=None, pre_v_id=None):
                 # Check for duplicates
                 cursor.execute("""
                     SELECT 1 FROM librarian_trades 
-                    WHERE villager_id = ? AND enchantment = ? AND enchantment_level = ? AND cost_emeralds = ?
+                    WHERE villager_id = ? AND enchantment = ? AND enchantment_level = ? AND emerald_cost = ?
                 """, (v_id, ench, level, cost))
 
                 # If duplicate exists, confirm before adding
@@ -332,7 +332,7 @@ def add_trade(pre_loc=None, pre_v_id=None):
 
                 # Save to database
                 cursor.execute("""
-                    INSERT INTO librarian_trades (villager_id, enchantment, enchantment_level, cost_emeralds)
+                    INSERT INTO librarian_trades (villager_id, enchantment, enchantment_level, emerald_cost)
                     VALUES (?, ?, ?, ?)
                 """, (v_id, ench, level, cost))
 
@@ -355,7 +355,7 @@ def add_trade(pre_loc=None, pre_v_id=None):
                 enchantments = get_enchantments(cursor)
 
                 cursor.execute(f"""
-                    INSERT INTO {table_name} (villager_id, item, cost_emeralds)
+                    INSERT INTO {table_name} (villager_id, item, emerald_cost)
                     VALUES (?, ?, ?)
                 """, (v_id, item, cost))
 

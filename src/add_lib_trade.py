@@ -12,7 +12,7 @@ The script also handles the addition of new trading hall locations and villager 
 The user is guided through each step with clear prompts and error messages to ensure data integrity.
 
 Flow:
-    1. Prompt user for `location`, `villager_id`, `enchantment`, `enchantment_level`, and `cost_emeralds`.
+    1. Prompt user for `location`, `villager_id`, `enchantment`, `enchantment_level`, and `emerald_cost`.
     2. Check if `location` exists in `locations` table.
         - If not, prompt user to add new location with coordinates.
     3. Check if `villager_id` exists in `villagers` table.
@@ -22,7 +22,7 @@ Flow:
     4. Check if `enchantment` exists in `enchantments` table and get its `max_level`.
         - If not, show error and prompt for a different enchantment.
     5. Validate that `enchantment_level` is between 1 and `max_level`.
-    6. Validate that `cost_emeralds` is between 1 and 64.
+    6. Validate that `emerald_cost` is between 1 and 64.
     7. Check for duplicate trade (same villager_id, enchantment, level, and cost).
         - If duplicate exists, prompt user to confirm if they want to add it anyway.
     8. If all validations pass, insert new trade into `librarian_trades` table.
@@ -33,12 +33,12 @@ Input:
 - villager_id (string): Unique identifier for the villager (e.g. 'spa001')
 - enchantment (string): Name of the enchantment (e.g. 'mending')
 - enchantment_level (int): Level of the enchantment (e.g. 1)
-- cost_emeralds (int): Cost in emeralds for the trade (e.g. 15)
+- emerald_cost (int): Cost in emeralds for the trade (e.g. 15)
 
 Output:
 - If the villager location is new, a new row is added to the `locations` table with the `location` and coordinate data (`x_coord`, `z_coord`)
 - If the `villager_id` is not in `villagers` table, then add a new row to the `villagers` table (`villager_id`, `location`, 'librarian') (notice that it should automatically record 'librarian' as the job)
-- Else add new row to `librarian_trades` table (`villager_id`, `enchantment`, `enchantment_level`, `cost_emeralds`)
+- Else add new row to `librarian_trades` table (`villager_id`, `enchantment`, `enchantment_level`, `emerald_cost`)
 """
 
 import os
@@ -249,7 +249,7 @@ def add_librarian_trade(pre_loc=None, pre_v_id=None):
             # Check for duplicates
             cursor.execute("""
                 SELECT 1 FROM librarian_trades 
-                WHERE villager_id = ? AND enchantment = ? AND enchantment_level = ? AND cost_emeralds = ?
+                WHERE villager_id = ? AND enchantment = ? AND enchantment_level = ? AND emerald_cost = ?
             """, (v_id, ench, level, cost))
 
             # If duplicate exists, confirm before adding
@@ -268,7 +268,7 @@ def add_librarian_trade(pre_loc=None, pre_v_id=None):
 
             # Save to database
             cursor.execute("""
-                INSERT INTO librarian_trades (villager_id, enchantment, enchantment_level, cost_emeralds)
+                INSERT INTO librarian_trades (villager_id, enchantment, enchantment_level, emerald_cost)
                 VALUES (?, ?, ?, ?)
             """, (v_id, ench, level, cost))
 
