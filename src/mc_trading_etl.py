@@ -4,44 +4,45 @@
 Filename: mc_trading_etl.py
 Author: Dylan Bretz Jr.
 Date: 2026-02-06
+Updated: 2026-03-12
 
 Description:
-This script performs an ETL (Extract, Transform, Load) process to gather
-data about Minecraft enchantments and villager jobs from the latest Minecraft
-client JAR file. The data is extracted directly from the JAR file in memory,
-cleaned, and then loaded into a SQLite database. The script checks the log file
-to determine whether the database is already up to date before downloading the
-JAR, and only updates the database if the extracted data has changed.
+This script performs an ETL (Extract, Transform, Load) process to gather 
+data about Minecraft enchantments and villager jobs from the latest Minecraft 
+client JAR file. The data is extracted directly from the JAR file in memory, 
+cleaned, and compared against the local SQLite database. If the database is 
+missing, outdated, or manually altered, the script automatically heals the 
+database by dropping and recreating the tables with the verified source data.
 
 Flow:
-1. Fetch the version manifest from piston-meta and parse the latest stable release version.
-2. Check for an existing log entry.
-    - If no log exists, or if the log is empty, skip to step 4.
-3. Read the latest version from the log.
-	- If it matches the latest stable release, log that the database is already up to date and exit.
-	- If it does not match, proceed to step 4.
-4. Fetch the URL for the latest release's version-specific JSON from the manifest.
-5. Fetch the client JAR download URL from the version-specific JSON.
-6. Download client.jar into RAM.
-7. Extract enchantment and job data from the JAR in memory.
-	- If extraction fails or returns empty data, log a warning and exit without modifying the database.
-8. Compare extracted data against the current contents of the `enchantments` and `jobs` tables.
-    - If the tables do not exist, skip comparison and proceed to step 9.
-    - If the data is unchanged, log that no changes were detected, update the log with the new version, and exit.
-    - If the data has changed, proceed to step 9.
-9. Drop and recreate the `enchantments` and `jobs` tables with the extracted data.
-10. Update the log with the new version.
-11. Print summary of loaded data.
+1. Fetch the version manifest from piston-meta and parse the latest stable 
+   release version.
+2. Fetch the URL for the latest release's version-specific JSON from the 
+   manifest.
+3. Fetch the client JAR download URL from the version-specific JSON.
+4. Download client.jar into RAM.
+5. Extract enchantment and job data from the JAR in memory.
+    - If extraction fails or validation counts mismatch, log a warning 
+      and exit.
+6. Format extracted data into Pandas DataFrames.
+7. Check if `enchantments` and `jobs` tables exist in the database.
+8. If tables exist, compare the newly extracted DataFrames against the
+   database.
+    - If the data matches perfectly, log that no changes are needed and exit.
+    - If the data differs (game update or database corruption), proceed to 
+      step 9.
+9. Drop and recreate the tables with the verified data to ensure integrity.
+10. Print summary of loaded data.
 
 Input:
 - Latest Minecraft client JAR file (downloaded into RAM)
-- Log file (`mc_trading_etl.log`), if it exists, to check the last recorded version
 
 Output:
-- SQLite database file (`mc_trading.db`) with two tables, updated only if the data has changed:
+- SQLite database file (`mc_trading.db`) with two tables, updated only if
+  differences are detected:
     1. enchantments
     2. jobs
-- Log file (`mc_trading_etl.log`), updated with the latest stable release version after each successful run, including runs where no database changes were necessary
+- Operational log file (`mc_trading_etl.log`)
 
 Requirements:
 - requests
@@ -70,8 +71,6 @@ DB_PATH = os.path.join(parent_dir, DB_NAME)
 LOG_PATH = os.path.join(parent_dir, LOG_FILE)
 
 MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest.json'
-
-VERSION_LOG_MARKER = 'SUCCESSFULLY PROCESSED VERSION:'
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,21 +113,6 @@ def get_latest_version_data():
     except Exception as e:
         logging.error(f'Unexpected error fetching manifest: {e}', exc_info=True)
         return None, None
-
-def get_last_logged_version():
-    """Reads the log file to find the last successfully processed Minecraft version."""
-    if not os.path.exists(LOG_PATH):
-        return None
-    try:
-        with open(LOG_PATH, 'r') as f:
-            lines = f.readlines()
-            for line in reversed(lines):
-                if VERSION_LOG_MARKER in line:
-                    return line.split(VERSION_LOG_MARKER)[-1].strip()
-    except Exception as e:
-        logging.warning(f'Could not read previous version from log: {e}')
-        return False
-    return None
 
 def get_client_jar_url(version_url):
     """Fetches version-specific JSON to find client.jar download URL."""
@@ -254,16 +238,6 @@ def run_etl():
     latest_version, version_url = get_latest_version_data()
 
     if latest_version and version_url:
-        last_version = get_last_logged_version()
-        if last_version is False:
-            return
-        if last_version:
-            logging.info(f'Found last version from log entry: {last_version}')
-            if last_version == latest_version:
-                logging.info('Database is already up to date with the latest stable release.')
-                return
-        else:
-            logging.info('No previous version found in logs. Proceeding with fresh data extraction.')
 
         client_url = get_client_jar_url(version_url)
 
@@ -271,6 +245,7 @@ def run_etl():
             enchantments, jobs = extract_data_from_memory(client_url)
 
             if enchantments and jobs:
+                # DB: Consider refactoring into new helper function
                 try:
                     df_ench = pd.DataFrame(enchantments).sort_values('enchantment').reset_index(drop=True)
                     df_jobs = pd.DataFrame(jobs).sort_values('job').reset_index(drop=True)
@@ -293,17 +268,16 @@ def run_etl():
                         jobs_exists = cursor.fetchone()
 
                         if ench_exists and jobs_exists:
-                            logging.info('Comparing extracted data against existing database records...')
-                            
+                            logging.info('Comparing source data against existing database records...')
+
                             df_existing_ench = pd.read_sql_query('SELECT * FROM enchantments ORDER BY enchantment', conn)
                             df_existing_jobs = pd.read_sql_query('SELECT * FROM jobs ORDER BY job', conn)
 
                             if df_ench.equals(df_existing_ench) and df_jobs.equals(df_existing_jobs):
-                                logging.info(f'No changes detected in game data. Database is already up to date for Minecraft {latest_version}.')
-                                logging.info(f'{VERSION_LOG_MARKER} {latest_version}')
+                                logging.info(f'Database integrity verified. Data exactly matches Minecraft {latest_version}. No update required.')
                                 return
 
-                        logging.info('Changes detected or tables missing. Updating database...')
+                        logging.info('Database changes or missing tables detected. Updating database...')
 
                         cursor.execute('DROP TABLE IF EXISTS enchantments')
                         cursor.execute('DROP TABLE IF EXISTS jobs')
@@ -325,8 +299,7 @@ def run_etl():
                         df_ench.to_sql('enchantments', conn, if_exists='append', index=False)
                         df_jobs.to_sql('jobs', conn, if_exists='append', index=False)
 
-                        logging.info(f'SUCCESS: Loaded {len(df_ench)} tradeable enchantments and {len(df_jobs)} possible jobs.')
-                        logging.info(f'{VERSION_LOG_MARKER} {latest_version}')
+                        logging.info(f'SUCCESS: Loaded {len(df_ench)} tradeable enchantments and {len(df_jobs)} possible jobs for Minecraft {latest_version}')
                 
                 except sqlite3.IntegrityError as e:
                     logging.error(f'Data integrity error: {e}', exc_info=True)
@@ -335,7 +308,6 @@ def run_etl():
 
             else:
                 logging.warning('No data extracted. Database not updated.')
-
 
 # --- MAIN EXECUTION ---
 
