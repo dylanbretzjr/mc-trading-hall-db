@@ -2,7 +2,9 @@
 
 ## Overview
 
-This project is a Python-based ETL and data management system for Minecraft villager trading. It automates the extraction of game data directly from Minecraft's source files and provides an interactive interface for tracking individual villager trades across different locations.
+This is a personal Python-based data management system for Minecraft villager trading using SQLite3 with an ETL pipeline and CLI tools, providing an effective interface for tracking, managing, and optimizing individual villager trades across different locations.
+
+The ETL pipeline automates the extraction of game data directly from Minecraft's source files and loads the reference data into a SQLite3 database. The CLI tools provide a quick and easy way to add and update trades.
 
 ## Workflow
 
